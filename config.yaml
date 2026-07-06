@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# Rightmove rental-alert configuration
+# Edit this file and re-run the notebook — no code changes needed.
+# ---------------------------------------------------------------------------
+
+# SEARCH PARAMETERS  (change these to re-target the search)
+# `locationIdentifier` comes from the Rightmove URL: locationIdentifier=REGION%5E85216
+#   -> "REGION^85216".  Find yours by running a search on rightmove.co.uk and
+#   copying it out of the address bar (%5E is just a URL-encoded "^").
+search:
+  locationIdentifier: "REGION^85216"
+  minBedrooms: 3
+  maxPrice: 3600          # pcm ceiling
+  minPrice: null          # or an int
+  radius: 3.0            # miles from the location centre
+  channel: "RENT"
+  sortType: 6             # 6 = newest listed first
+  propertyTypes: null     # e.g. "flat,detached" or null for any
+  maxDaysSinceAdded: 3 # e.g. 1, 3, 7, 14 — or null for all
+  include_let_agreed: false
+
+# Safety cap on how many listings to pull, and politeness delay between pages.
+max_properties: 400
+page_delay_seconds: 1.5
+
+# ---------------------------------------------------------------------------
+# TARGET LOCATIONS for "as the crow flies" distances (km).
+# ⚠️ ASSUMPTION: these lat/lon are best-guess — verify / adjust them.
+#   (`address` is unused for now but is here for the future Google Maps
+#    travel-time feature so you can geocode authoritatively.)
+# ---------------------------------------------------------------------------
+targets:
+  Paddington:
+    lat: 51.5154
+    lon: -0.1755
+    address: "Paddington Station, London W2 1HB"
+  "OC&C":
+    lat: 51.5179
+    lon: -0.1074
+    address: "OC&C Strategy Consultants, 6 New Street Square, London EC4A 3BF"
+  DCMS:
+    lat: 51.5041
+    lon: -0.1259
+    address: "DCMS, 100 Parliament Street, London SW1A 2BQ"
