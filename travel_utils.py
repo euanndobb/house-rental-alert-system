@@ -46,7 +46,6 @@ def _latlon(point) -> str:
         return f"{point[0]},{point[1]}"
     return str(point)
 
-
 def _auth_params(app_key: str | None = None) -> dict:
     """Optional app key (arg or TFL_APP_KEY env var) for higher rate limits."""
     key = app_key or os.environ.get("TFL_APP_KEY")
