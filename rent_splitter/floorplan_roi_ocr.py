@@ -24,7 +24,7 @@ Outputs:
   - <image>_roi_annotated.png : your boxes drawn + the parsed values
   - <image>_roi_results.json  : structured results
 
-Usage:
+Usage (from the rent_splitter/ folder):
     uv run python floorplan_roi_ocr.py files/43_lydford_road.jpg
     uv run python floorplan_roi_ocr.py files/43_lydford_road.jpg --regions files/43_lydford_road_regions.json
     uv run python floorplan_roi_ocr.py files/43_lydford_road.jpg --lang en --max-display 1400

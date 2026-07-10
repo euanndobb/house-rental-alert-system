@@ -10,13 +10,13 @@ Workflow (all in the browser — no desktop OpenCV window):
   4. Analyse: PaddleOCR reads each region, dimensions/areas are parsed, and the
      rent is split across the bedrooms.
 
-Run:
-    uv run python app.py
+Run (from the repo root):
+    uv run python rent_splitter/app.py
     # then, to share:  cloudflared tunnel --url http://localhost:5000
 
 Debug is OFF so this is safe to expose through a Cloudflare tunnel. For a real
 public deployment prefer a WSGI server, e.g.:
-    uv run waitress-serve --port 5000 app:app
+    cd rent_splitter && uv run waitress-serve --port 5000 app:app
 """
 
 import uuid

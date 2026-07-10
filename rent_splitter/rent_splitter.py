@@ -1,5 +1,8 @@
 # Build room areas (m²) and split rent from the floor-plan OCR results.
 import json
+from pathlib import Path
+
+BASE = Path(__file__).parent
 
 FT_TO_M = 0.3048       # feet -> metres
 M2_PER_FT2 = 0.092903  # square feet -> square metres
@@ -112,7 +115,7 @@ def compute_rents(areas, total_rent):
 if __name__ == "__main__":
     from pprint import pprint
 
-    areas = room_areas_m2("files/43_lydford_road_roi_results.json")
+    areas = room_areas_m2(BASE / "files" / "43_lydford_road_roi_results.json")
     rents = compute_rents(areas, TOTAL_RENT)
     print("areas:")
     pprint(areas)
