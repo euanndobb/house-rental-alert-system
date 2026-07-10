@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floor-plan Rent Splitter</title>
+<style>
+  :root { --green:#0fa958; --red:#e23b3b; --ink:#1c2530; --muted:#6b7684; --line:#e3e7ec; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+         color:var(--ink); background:#f5f7fa; }
+  header { padding:18px 24px; background:#fff; border-bottom:1px solid var(--line); }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+  .wrap { display:flex; gap:20px; padding:20px; align-items:flex-start; flex-wrap:wrap; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .left { flex:1 1 620px; min-width:320px; }
+  .right { flex:1 1 300px; min-width:280px; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line);
+           background:#fff; cursor:pointer; }
+  button:hover { background:#f0f3f7; }
+  button.primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+  button.primary:disabled { opacity:.5; cursor:not-allowed; }
+  button.mode.active[data-mode="bedroom"] { background:var(--green); color:#fff; border-color:var(--green); }
+  button.mode.active[data-mode="area"] { background:var(--red); color:#fff; border-color:var(--red); }
+  .hint { color:var(--muted); font-size:13px; line-height:1.5; }
+  .canvas-box { border:1px dashed var(--line); border-radius:8px; overflow:auto; background:#fafbfc;
+                display:flex; justify-content:center; }
+  canvas { max-width:100%; cursor:crosshair; display:block; }
+  label.rent { display:flex; align-items:center; gap:8px; font-size:14px; }
+  input[type=number]{ font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:6px; width:110px; }
+  input[type=file]{ font:inherit; }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin-top:6px; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .rent-val { font-weight:700; }
+  .tag { display:inline-block; width:22px; height:22px; line-height:22px; text-align:center;
+         border-radius:50%; color:#fff; font-size:12px; font-weight:700; }
+  .tag.g { background:var(--green); } .tag.r { background:var(--red); }
+  .status { font-size:13px; color:var(--muted); min-height:18px; margin-top:8px; }
+  .warn { color:var(--red); }
+  .muted { color:var(--muted); }
+  h3 { margin:18px 0 6px; font-size:15px; }
+  h3:first-child { margin-top:0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Floor-plan Rent Splitter</h1>
+  <p>Draw a box on each bedroom's dimensions and on the total area, then split the rent by room size.</p>
+</header>
+
+<div class="wrap">
+  <div class="panel left">
+    <div class="toolbar">
+      <input type="file" id="file" accept="image/*">
+      <button id="sampleBtn">Load sample</button>
+    </div>
+    <div class="toolbar">
+      <button class="mode active" data-mode="bedroom" id="modeBedroom">➕ Add bedroom</button>
+      <button class="mode" data-mode="area" id="modeArea">▭ Set total area</button>
+      <button id="undoBtn">Undo</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+    <div class="canvas-box">
+      <canvas id="canvas" width="10" height="10"></canvas>
+    </div>
+    <div class="status" id="status">Upload a floor plan to begin.</div>
+    <p class="hint">
+      <b>Bedroom mode</b> (green): drag a box around each bedroom's dimension text — they are
+      numbered 1, 2, 3, … in the order you draw them.<br>
+      <b>Total area mode</b> (red): drag one box around the total floor-area figure.<br>
+      Include a little margin so the units (the “m”, the “ft²”) are inside the box.
+    </p>
+  </div>
+
+  <div class="panel right">
+    <label class="rent">Total monthly rent (£)
+      <input type="number" id="rent" value="{{ default_rent }}" min="0" step="50">
+    </label>
+    <div class="toolbar" style="margin-top:12px;">
+      <button class="primary" id="analyzeBtn" disabled>Analyse &amp; split rent</button>
+    </div>
+    <div class="status" id="analyzeStatus"></div>
+    <div id="results"></div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const analyzeStatus = document.getElementById('analyzeStatus');
+const analyzeBtn = document.getElementById('analyzeBtn');
+
+let imageName = null;      // server-side filename
+let img = new Image();     // loaded floor plan
+let scale = 1;             // original px per canvas px
+let bedrooms = [];         // [{x,y,w,h}] in canvas coords
+let area = null;           // {x,y,w,h} in canvas coords
+let mode = 'bedroom';
+let drawing = false, start = null, cur = null;
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeBedroom').classList.toggle('active', m === 'bedroom');
+  document.getElementById('modeArea').classList.toggle('active', m === 'area');
+}
+document.getElementById('modeBedroom').onclick = () => setMode('bedroom');
+document.getElementById('modeArea').onclick = () => setMode('area');
+
+function loadImage(url, name, w, h) {
+  imageName = name;
+  img = new Image();
+  img.onload = () => {
+    const maxW = Math.min(img.naturalWidth, 900, window.innerWidth - 60);
+    canvas.width = Math.round(maxW);
+    canvas.height = Math.round(maxW * img.naturalHeight / img.naturalWidth);
+    scale = img.naturalWidth / canvas.width;
+    bedrooms = []; area = null;
+    redraw();
+    analyzeBtn.disabled = false;
+    statusEl.textContent = `Loaded ${w}×${h}px. Draw your bedroom boxes.`;
+  };
+  img.src = url;
+}
+
+function redraw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (img.src) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  bedrooms.forEach((b, i) => drawBox(b, '#0fa958', String(i + 1)));
+  if (area) drawBox(area, '#e23b3b', 'A');
+  if (drawing && start && cur) {
+    const r = norm(start, cur);
+    drawBox(r, mode === 'bedroom' ? '#0fa958' : '#e23b3b', '', true);
+  }
+}
+
+function drawBox(b, color, label, dashed) {
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = color;
+  if (dashed) ctx.setLineDash([6, 4]); else ctx.setLineDash([]);
+  ctx.strokeRect(b.x, b.y, b.w, b.h);
+  ctx.setLineDash([]);
+  if (label) {
+    const r = 12;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(b.x + r, b.y + r, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, b.x + r, b.y + r + 1);
+  }
+}
+
+function norm(a, b) {
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+           w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+}
+function pos(e) {
+  const r = canvas.getBoundingClientRect();
+  const sx = canvas.width / r.width, sy = canvas.height / r.height;
+  return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+}
+
+canvas.addEventListener('mousedown', e => {
+  if (!imageName) return;
+  drawing = true; start = pos(e); cur = start;
+});
+canvas.addEventListener('mousemove', e => {
+  if (!drawing) return; cur = pos(e); redraw();
+});
+window.addEventListener('mouseup', e => {
+  if (!drawing) return;
+  drawing = false; cur = pos(e);
+  const r = norm(start, cur);
+  if (r.w > 6 && r.h > 6) {
+    if (mode === 'bedroom') bedrooms.push(r); else area = r;
+  }
+  start = cur = null;
+  redraw();
+});
+
+document.getElementById('undoBtn').onclick = () => {
+  if (mode === 'area' && area) area = null;
+  else bedrooms.pop();
+  redraw();
+};
+document.getElementById('clearBtn').onclick = () => { bedrooms = []; area = null; redraw(); };
+
+document.getElementById('file').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('image', f);
+  statusEl.textContent = 'Uploading…';
+  fetch('/upload', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => d.error ? statusEl.textContent = d.error
+                       : loadImage(d.url, d.name, d.width, d.height))
+    .catch(() => statusEl.textContent = 'Upload failed.');
+};
+document.getElementById('sampleBtn').onclick = () => {
+  statusEl.textContent = 'Loading sample…';
+  fetch('/sample', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => d.error ? statusEl.textContent = d.error
+                       : loadImage(d.url, d.name, d.width, d.height))
+    .catch(() => statusEl.textContent = 'Could not load sample.');
+};
+
+function toOriginal(b) {
+  return [Math.round(b.x * scale), Math.round(b.y * scale),
+          Math.round(b.w * scale), Math.round(b.h * scale)];
+}
+
+analyzeBtn.onclick = () => {
+  if (!imageName) return;
+  if (bedrooms.length === 0) { analyzeStatus.textContent = 'Draw at least one bedroom box.'; return; }
+  analyzeBtn.disabled = true;
+  analyzeStatus.innerHTML = 'Reading the floor plan… <span class="muted">(first run loads the OCR models, ~30s)</span>';
+  document.getElementById('results').innerHTML = '';
+  fetch('/analyze', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      image: imageName,
+      bedrooms: bedrooms.map(toOriginal),
+      area: area ? toOriginal(area) : null,
+      total_rent: parseFloat(document.getElementById('rent').value) || 0,
+    }),
+  })
+    .then(r => r.json())
+    .then(render)
+    .catch(() => analyzeStatus.textContent = 'Analysis failed.')
+    .finally(() => analyzeBtn.disabled = false);
+};
+
+function fmtM2(v) { return v == null ? '—' : v.toFixed(1) + ' m²'; }
+function fmtGBP(v) { return v == null ? '—' : '£' + v.toFixed(2); }
+
+function render(d) {
+  if (d.error) { analyzeStatus.textContent = d.error; return; }
+  analyzeStatus.textContent = '';
+  let html = '';
+
+  html += '<h3>Rooms</h3><table><tr><th>Room</th><th>Dimensions</th><th>Area</th></tr>';
+  d.bedrooms.forEach((b, i) => {
+    html += `<tr>
+      <td><span class="tag g">${i + 1}</span> ${b.label}</td>
+      <td>${b.dimension || '<span class="warn">not read</span>'}</td>
+      <td class="num">${fmtM2(b.area_m2)}</td></tr>`;
+  });
+  if (d.total_area) {
+    html += `<tr><td><span class="tag r">A</span> total area</td>
+      <td>${d.total_area.value || '<span class="warn">not read</span>'}</td>
+      <td class="num">${fmtM2(d.total_area.area_m2)}</td></tr>`;
+  }
+  html += '</table>';
+
+  if (d.unreadable && d.unreadable.length) {
+    html += `<p class="status warn">Couldn't read: ${d.unreadable.join(', ')}.
+      Redraw those boxes with more margin, then analyse again. Rent split needs every room read.</p>`;
+  } else if (d.breakdown && Object.keys(d.breakdown.bedrooms).length) {
+    const bd = d.breakdown;
+    html += `<h3>Rent breakdown</h3>
+      <p class="hint">Each room pays the same <b>base rent</b> — an equal share of the
+      communal area (${fmtM2(d.summary.communal_area)}) — plus a
+      <b>bedroom-weighted adjustment</b> scaled by room size. Base £${bd.base_rent.toFixed(2)} each.</p>
+      <table><tr><th>Room</th><th>Base</th><th>+ Adjustment</th><th>= Rent</th></tr>`;
+    let sB = 0, sA = 0, sT = 0;
+    d.bedrooms.forEach((b, i) => {
+      const p = bd.bedrooms[b.label];
+      if (!p) return;
+      sB += p.base; sA += p.adjustment; sT += p.total;
+      html += `<tr>
+        <td><span class="tag g">${i + 1}</span> ${b.label}</td>
+        <td class="num">${fmtGBP(p.base)}</td>
+        <td class="num">${fmtGBP(p.adjustment)}</td>
+        <td class="num rent-val">${fmtGBP(p.total)}</td></tr>`;
+    });
+    html += `<tr><td class="muted">Total</td>
+      <td class="num muted">${fmtGBP(sB)}</td>
+      <td class="num muted">${fmtGBP(sA)}</td>
+      <td class="num rent-val">${fmtGBP(sT)}</td></tr></table>`;
+  } else {
+    html += `<p class="status">Add a total-area box to also split the rent.</p>`;
+  }
+
+  document.getElementById('results').innerHTML = html;
+}
+</script>
+</body>
+</html>

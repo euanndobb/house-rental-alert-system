@@ -21,6 +21,9 @@ dist/
 *.egg-info/
 .eggs/
 
+# Flask uploads (user-submitted floor plans)
+uploads/
+
 # Environment / secrets
 .env
 .env.*
